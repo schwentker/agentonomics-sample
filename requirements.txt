@@ -1,0 +1,9 @@
+strands-agents[anthropic]
+strands-agents-tools
+mcp
+python-dotenv
+pydantic>=2.0
+tiktoken
+rich
+pytest
+jinja2
