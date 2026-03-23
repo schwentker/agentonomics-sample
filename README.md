@@ -245,15 +245,17 @@ Configure MCP tools in `mcp.json`:
 
 ### Filesystem Tools (MCP)
 
-The MCP filesystem server provides sandboxed file operations:
+The MCP filesystem server (`@modelcontextprotocol/server-filesystem`) provides sandboxed file operations:
 
-- `read_file` - Read file contents
+- `list_allowed_directories` - List directories the server can access
+- `list_directory` - List contents of a directory
+- `directory_tree` - Show directory structure as a tree
+- `read_text_file` - Read content of a text file
+- `read_multiple_files` - Read multiple files at once
 - `write_file` - Create or overwrite files
-- `list_directory` - List directory contents
+- `edit_file` - Edit an existing file
 - `create_directory` - Create directories
-- `move_file` - Move/rename files
-- `search_files` - Search for files by pattern
-- `get_file_info` - Get file metadata
+- `search_files` - Search for files matching patterns
 
 ### Code Execution (Sandbox)
 
@@ -310,32 +312,45 @@ python benchmark.py \
 
 ```
 benchmark_results_YYYYMMDD_HHMMSS/
-├── goal.md                    # Copy of the input goal
-├── rubric.json                # Generated assessment rubric
-├── benchmark_report.md        # Human-readable report
-├── benchmark_report.json      # Machine-readable report
+├── goal.md                      # Copy of the input goal
+├── rubric.json                  # Generated assessment rubric
+├── benchmark_report.md          # Human-readable comparison report
+├── benchmark_report.json        # Machine-readable report data
 ├── single_agent/
-│   ├── master_prompt.md       # System prompt used
-│   ├── metrics.json           # Token and timing metrics
-│   ├── messages.json          # Full conversation history
-│   ├── tool_calls.json        # Tool call history
-│   └── result.json            # Execution result
+│   ├── master_prompt.md         # System prompt used
+│   ├── conversation.jsonl       # Streaming conversation log
+│   ├── conversation_meta.json   # Conversation metadata
+│   ├── messages.json            # Full message history
+│   ├── raw_messages.json        # Raw agent messages for debugging
+│   ├── metrics.json             # Token usage and timing metrics
+│   ├── tool_calls.json          # Consolidated tool call summary
+│   ├── tool_calls.jsonl         # Streaming tool call log
+│   └── result.json              # Execution result (success/failure)
 ├── multi_agent/
-│   ├── master_prompt.md       # Orchestrator prompt
-│   ├── task_decomposition.json # How goal was broken down
-│   ├── aggregate_metrics.json  # Combined metrics
+│   ├── master_prompt.md         # Orchestrator system prompt
+│   ├── task_decomposition.json  # How goal was broken into tasks
+│   ├── aggregate_metrics.json   # Combined metrics across all agents
+│   ├── result.json              # Overall execution result
 │   ├── orchestrator/
-│   │   ├── metrics.json
-│   │   ├── messages.json
-│   │   └── tool_calls.json
-│   └── sub_agent_task_N/
-│       ├── prompt.md
-│       ├── metrics.json
-│       ├── messages.json
-│       └── result.json
+│   │   ├── conversation.jsonl   # Orchestrator conversation log
+│   │   ├── conversation_meta.json
+│   │   ├── messages.json        # Orchestrator message history
+│   │   ├── metrics.json         # Orchestrator token/timing metrics
+│   │   ├── tool_calls.json      # Tool call summary
+│   │   └── tool_calls.jsonl     # Streaming tool calls
+│   └── sub_agent_task_N/        # One directory per decomposed task
+│       ├── prompt.md            # Sub-agent's task prompt
+│       ├── conversation.jsonl   # Sub-agent conversation log
+│       ├── conversation_meta.json
+│       ├── messages.json        # Sub-agent message history
+│       ├── raw_messages.json    # Raw messages for debugging
+│       ├── metrics.json         # Sub-agent token/timing metrics
+│       ├── tool_calls.json      # Tool call summary
+│       ├── tool_calls.jsonl     # Streaming tool calls
+│       └── result.json          # Sub-agent execution result
 └── workspace/
-    ├── single_agent/          # Files created by single agent
-    └── multi_agent/           # Files created by multi-agent
+    ├── single_agent/            # Files created by single agent
+    └── multi_agent/             # Files created by multi-agent
 ```
 
 ## Benchmark Report
@@ -387,6 +402,18 @@ python benchmark.py --goal examples/goals/simple_goal.md
 python benchmark.py --goal examples/goals/simple_goal.md --model claude-sonnet-4-6 --skip-validation --quiet --yes
 ```
 
+## Future Opportunities
+
+- **Summarization Strategies** - Explore different approaches to context summarization for long-running agents
+- **Optimization Options** - Goal-based optimization for speed, quality, or cost; no-summary documents; constrained complexity
+- **Domain Specific Rubrics** - Pre-built evaluation rubrics tailored to specific domains (web apps, APIs, data pipelines, etc.)
+- **Task Decomposition Strategies** - Alternative approaches to breaking down goals (by layer, by feature, by complexity)
+- **Semantic Tool Selection** - Intelligent tool filtering based on goal analysis to reduce context overhead
+
+## Contributing
+
+Contributions are welcome! Please submit a Pull Request with your changes.
+
 ## License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
