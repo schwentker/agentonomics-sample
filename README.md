@@ -2,6 +2,10 @@
 
 A benchmarking system to compare single-agent vs multi-agent approaches for completing goals using the Strands Agents framework.
 
+## DISCLAIMER
+
+This repository contains example code provided for illustrative purposes only. It is not a supported product, and no guarantees are made regarding its functionality, accuracy, security, or fitness for any particular purpose. Use at your own risk. Workato does not provide support, maintenance, or updates for this code. It is not intended for use in production environments without thorough review and testing.
+
 ## Overview
 
 This system runs the same goal through two different agent architectures and compares their performance:
