@@ -10,4 +10,6 @@ __pycache__/
 *.pyo
 
 # Virtual environment
-.venv/
+.venv/__pycache__/
+*.pyc
+.DS_Store

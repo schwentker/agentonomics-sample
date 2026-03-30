@@ -222,10 +222,13 @@ class SubAgentExecutor:
 class MultiAgentExecutor:
     """Orchestrates multiple agents to complete a goal."""
     
-    def __init__(self, config: BenchmarkConfig, api_key: str, mcp_manager: MCPManager):
+    def __init__(self, config: BenchmarkConfig, api_key: str, mcp_manager: MCPManager,
+                 validator=None):
         self.config = config
         self.api_key = api_key
         self.mcp_manager = mcp_manager
+        self._validator = validator
+        self._dag_validation = None
         self.output_dir = config.output_dir / "multi_agent"
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
@@ -331,6 +334,19 @@ class MultiAgentExecutor:
         # Save decomposition
         decomp_file = self.output_dir / "task_decomposition.json"
         self.decomposer.save_decomposition(self.decomposition, str(decomp_file))
+
+        if self._validator is not None:
+            dag_result = self._validator.validate(self.decomposition)
+            self._dag_validation = dag_result.to_dict()
+
+            dag_validation_file = self.output_dir / "dag_validation.json"
+            with open(dag_validation_file, "w") as f:
+                json.dump(self._dag_validation, f, indent=2)
+
+            if not dag_result.valid:
+                raise ValueError(
+                    f"DAG validation failed: {'; '.join(dag_result.errors)}"
+                )
         
         # Create orchestrator prompt with verification requirements
         orchestrator_prompt = self._create_orchestrator_prompt(goal, self.decomposition, requirements)
@@ -444,6 +460,10 @@ class MultiAgentExecutor:
     def get_sub_agent_metrics(self) -> list[dict[str, Any]]:
         """Get metrics for each individual sub-agent."""
         return self.metrics_tracker.get_sub_agent_metrics()
+
+    def get_dag_validation(self) -> dict | None:
+        """Return DAG validation result if validation was enabled."""
+        return self._dag_validation
     
     def get_decomposition_report(self) -> str:
         """Get a report of how the task was decomposed."""
