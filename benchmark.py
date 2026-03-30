@@ -257,7 +257,8 @@ def collect_file_metrics(workspace: Path) -> 'FileMetrics':
 
 
 def run_benchmark(config: BenchmarkConfig, api_key: str, goal: str, 
-                  mcp_config_path: Path, quiet: bool = False) -> Path:
+                  mcp_config_path: Path, quiet: bool = False,
+                  validate_dag: bool = False) -> Path:
     """Run the benchmark comparing single and multi-agent approaches."""
     report_gen = ReportGenerator(config.output_dir, config.to_dict())
     
@@ -344,13 +345,41 @@ def run_benchmark(config: BenchmarkConfig, api_key: str, goal: str,
     # Set workspace for this agent
     config.workspace_dir = multi_workspace
     multi_mcp_manager = MCPManager(mcp_config_path, multi_workspace)
+
+    dag_validator = None
+    if validate_dag:
+        from src.dag_validator import DAGValidator
+        dag_validator = DAGValidator()
+
+    def execute_multi_agent() -> tuple[MultiAgentExecutor, dict, dict, str]:
+        multi_executor = MultiAgentExecutor(
+            config,
+            api_key,
+            multi_mcp_manager,
+            validator=dag_validator,
+        )
+        try:
+            multi_result = multi_executor.execute(goal)
+        except ValueError as e:
+            if multi_executor.get_dag_validation() is None:
+                raise
+            multi_result = {
+                "success": False,
+                "output": "",
+                "error": str(e),
+                "task_results": {},
+            }
+            result_file = multi_executor.output_dir / "result.json"
+            with open(result_file, "w") as f:
+                json.dump(multi_result, f, indent=2)
+
+        multi_metrics = multi_executor.get_metrics()
+        decomp_report = multi_executor.get_decomposition_report()
+        return multi_executor, multi_result, multi_metrics, decomp_report
     
     if quiet:
         console.print("Multi-agent orchestration executing...")
-        multi_executor = MultiAgentExecutor(config, api_key, multi_mcp_manager)
-        multi_result = multi_executor.execute(goal)
-        multi_metrics = multi_executor.get_metrics()
-        decomp_report = multi_executor.get_decomposition_report()
+        multi_executor, multi_result, multi_metrics, decomp_report = execute_multi_agent()
     else:
         with Progress(
             SpinnerColumn(),
@@ -359,10 +388,7 @@ def run_benchmark(config: BenchmarkConfig, api_key: str, goal: str,
         ) as progress:
             task = progress.add_task("Multi-agent orchestration executing...", total=None)
             
-            multi_executor = MultiAgentExecutor(config, api_key, multi_mcp_manager)
-            multi_result = multi_executor.execute(goal)
-            multi_metrics = multi_executor.get_metrics()
-            decomp_report = multi_executor.get_decomposition_report()
+            multi_executor, multi_result, multi_metrics, decomp_report = execute_multi_agent()
             
             progress.update(task, completed=True)
     
@@ -576,6 +602,7 @@ def main():
     env_top_k = get_env_int("BENCHMARK_TOP_K")
     env_max_tokens = get_env_int("BENCHMARK_MAX_TOKENS")
     env_skip_validation = get_env_bool("BENCHMARK_SKIP_VALIDATION", False)
+    env_validate_dag = get_env_bool("BENCHMARK_VALIDATE_DAG", False)
     
     parser = argparse.ArgumentParser(
         description="Agent Benchmark System - Compare single vs multi-agent approaches",
@@ -591,6 +618,7 @@ Environment Variables (can be set in .env file):
   BENCHMARK_TOP_K           Top-k sampling
   BENCHMARK_MAX_TOKENS      Max output tokens
   BENCHMARK_SKIP_VALIDATION Skip goal validation (true/false)
+  BENCHMARK_VALIDATE_DAG    Validate multi-agent decomposition as DAG (true/false)
 
 CLI arguments override environment variables.
 """
@@ -624,6 +652,16 @@ CLI arguments override environment variables.
         action="store_true",
         default=env_skip_validation,
         help="Skip goal validation step"
+    )
+    parser.add_argument(
+        "--validate-dag",
+        action="store_true",
+        default=env_validate_dag,
+        help=(
+            "Validate multi-agent task decomposition as a DAG before execution. "
+            "Detects cycles and invalid dependency references. "
+            "Only applies to multi-agent path. (env: BENCHMARK_VALIDATE_DAG)"
+        )
     )
     parser.add_argument(
         "--temperature",
@@ -766,7 +804,14 @@ CLI arguments override environment variables.
         f.write(goal)
     
     # Run benchmark
-    report_path = run_benchmark(config, api_key, goal, args.mcp_config, args.quiet)
+    report_path = run_benchmark(
+        config,
+        api_key,
+        goal,
+        args.mcp_config,
+        args.quiet,
+        validate_dag=args.validate_dag,
+    )
     
     # Display summary
     display_quick_summary(output_dir)

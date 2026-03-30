@@ -163,6 +163,13 @@ sequenceDiagram
    - Independent token tracking
    - Isolated execution
 
+4. **Optional DAG Validation**: The multi-agent decomposition can be validated
+   before orchestrator/sub-agent execution
+   - Enabled with `--validate-dag` or `BENCHMARK_VALIDATE_DAG=true`
+   - Checks for empty decompositions, duplicate IDs, dangling references, and cycles
+   - Produces `multi_agent/dag_validation.json`
+   - If invalid, multi-agent is marked failed and report generation still continues
+
 ## Rubric-Based Evaluation
 
 ```mermaid
@@ -225,6 +232,7 @@ ANTHROPIC_API_KEY=your_api_key_here
 | `BENCHMARK_TOP_K`           | Top-k sampling                    |
 | `BENCHMARK_MAX_TOKENS`      | Max output tokens                 |
 | `BENCHMARK_SKIP_VALIDATION` | Skip goal validation (true/false) |
+| `BENCHMARK_VALIDATE_DAG`    | Validate multi-agent DAG          |
 | `BENCHMARK_QUIET`           | Disable spinners (true/false)     |
 | `BENCHMARK_YES`             | Auto-confirm (true/false)         |
 
@@ -291,10 +299,29 @@ python benchmark.py \
   --model claude-sonnet-4-6 \
   --temperature 0.7 \
   --max-tokens 8192 \
+  --validate-dag \
   --skip-validation \
   --quiet \
   --yes
 ```
+
+### DAG Validation
+
+Use `--validate-dag` to validate the multi-agent task decomposition after the
+decomposer runs but before orchestrator/sub-agent execution begins.
+
+Validation checks:
+
+- Empty decompositions
+- Duplicate task IDs
+- Dangling dependency references
+- Cycles in the dependency graph
+- Warnings for isolated tasks and deep dependency chains
+
+When enabled, the benchmark writes `multi_agent/dag_validation.json`. If the DAG
+is invalid, the multi-agent run is recorded as failed and the benchmark still
+continues to report generation using the single-agent results and the failed
+multi-agent status.
 
 ### CLI Arguments
 
@@ -305,6 +332,7 @@ python benchmark.py \
 | `--output`          | `-o`  | Output directory                         | Auto-generated |
 | `--model`           |       | Model ID to use                          | Interactive    |
 | `--skip-validation` |       | Skip goal validation step                | False          |
+| `--validate-dag`    |       | Validate multi-agent task DAG            | False          |
 | `--temperature`     |       | Model temperature (0.0-1.0)              | 1.0            |
 | `--top-p`           |       | Top-p sampling (nucleus sampling)        | None           |
 | `--top-k`           |       | Top-k sampling                           | None           |
@@ -333,6 +361,7 @@ benchmark_results_YYYYMMDD_HHMMSS/
 ├── multi_agent/
 │   ├── master_prompt.md         # Orchestrator system prompt
 │   ├── task_decomposition.json  # How goal was broken into tasks
+│   ├── dag_validation.json      # DAG validation result (when enabled)
 │   ├── aggregate_metrics.json   # Combined metrics across all agents
 │   ├── result.json              # Overall execution result
 │   ├── orchestrator/
