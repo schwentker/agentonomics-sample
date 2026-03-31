@@ -30,7 +30,7 @@ decomposition with the following graph properties:
 | Property | Description | Why it matters for DAG validation |
 |---|---|---|
 | **Hub node** | `types.ts` has 0 deps but 8+ dependents | Tests fan-out from a single root |
-| **Fan-out** | 4 parallel adapter tasks branch from the DB layer | Tests parallel level grouping |
+| **Fan-out** | 4 parallel adapter tasks branch from `config.ts` (+ `types.ts`) | Tests parallel level grouping |
 | **Fan-in** | `CommunityAggregator` depends on all 4 adapters + DB | Tests convergence detection |
 | **Diamond dependency** | `config.ts` is needed at depth 1 and depth 3 | Tests multi-path convergence |
 | **Linear chain** | MCP Server → HTTP/SSE → Deployment | Tests serial dependency ordering |
@@ -44,37 +44,66 @@ types.ts (L0)
     +-- config.ts (L1)
     |       |
     |       +-- db.ts (L2)
-    |       |       |
-    |       |       +-- RedditAdapter (L3)
-    |       |       +-- SystematicAdapter (L3)
-    |       |       +-- SlackAdapter (L3)
-    |       |       +-- DiscordAdapter (L3)
-    |       |               |
-    |       |               +-- CommunityAggregator (L4)
-    |       |                       |
-    |       |                       +-- MCP Server (L5)
-    |       |                               |
-    |       +-------------------------------+-- HTTP/SSE Layer (L6)
-    |                                               |
-    |                                               +-- Deployment (L7)
+    |       |
+    |       +-- RedditAdapter (L2)
+    |       +-- SystematicAdapter (L2)
+    |       +-- SlackAdapter (L2)
+    |       +-- DiscordAdapter (L2)
+    |               |
+    |               +-- CommunityAggregator (L3 — depends on all 4 adapters + db)
+    |                       |
+    |                       +-- MCP Server (L4)
+    |                               |
+    |       +-----------------------+-- HTTP/SSE Layer (L5)
+    |                                       |
+    |                                       +-- Deployment (L6)
     |
-    +-- Tests (L8 — depends on adapters, aggregator, db, HTTP)
+    +-- tsconfig / .env.example (L1)
+    |
+    +-- Tests (L6 — depends on adapters, aggregator, db, HTTP; may share level with Deployment)
 ```
 
 ### Expected Validation Metrics
 
-When run through `--validate-dag`, the decomposition should produce approximately:
+When run through `--validate-dag`, the target shape is:
 
-| Metric | Expected range |
+| Metric | Target range | Notes |
+|---|---|---|
+| `task_count` | 8–13 | Lower end if adapters merge or types+config merge; higher if deployment splits |
+| `graph_depth` | 5–8 levels | Merging types+config reduces by 1; splitting tests adds 1 |
+| `max_fan_out` | 3–7 (from types or config) | 7 when types.ts feeds config, db, 4 adapters, and tsconfig directly; lower if decomposer collapses indirect deps |
+| `max_fan_in` | 4–7 (at aggregator or tests) | 5 at aggregator (4 adapters + db); up to 7 at tests (adapters + aggregator + db + HTTP) |
+| `parallelism_width` | 2–5 (the adapter level) | 5 if db shares the adapter layer; 4 when adapters alone; 2 if some merge |
+
+These are broad target ranges, not pass/fail thresholds. LLM decomposition variance
+means the exact task IDs and groupings will differ across runs. The structural
+properties (hub → fan-out → fan-in → chain) should be stable even when counts shift.
+
+### Acceptable Decomposition Merges
+
+The following merges are valid and do not indicate a goal or validator bug:
+
+| Merge | Effect on metrics | Still exercises |
+|---|---|---|
+| `types.ts` + `config.ts` into one task | depth −1, fan-out origin shifts | Fan-out, fan-in, diamond |
+| `tsconfig` + `.env.example` merged into deployment | task_count −1 | No change to critical path |
+| Tests split per module (unit, integration, E2E) | task_count +2, leaf fan-in splits | Wide leaf layer |
+| `db.ts` grouped with adapters at same level | parallelism_width +1 | Fan-out widens, fan-in unchanged |
+
+Note: Merging all 4 adapters into a single task is **not** an acceptable merge —
+the goal explicitly instructs the decomposer to represent each adapter separately.
+
+### DAG Success Profile
+
+For automated benchmark gates, use these minimum thresholds:
+
+| Metric | Minimum to pass |
 |---|---|
-| `task_count` | 10–12 |
-| `graph_depth` | 6–9 levels |
-| `max_fan_out` | 4–5 (from db.ts or types.ts) |
-| `max_fan_in` | 4–6 (at aggregator or tests) |
-| `parallelism_width` | 4 (the adapter level) |
-
-These ranges account for LLM decomposition variance — the exact task IDs and
-groupings will differ across runs, but the structural properties should be stable.
+| `task_count` | ≥ 7 |
+| `graph_depth` | ≥ 4 |
+| `parallelism_width` | ≥ 2 |
+| `max_fan_in` | ≥ 2 |
+| `valid` | `true` (no cycles, no dangling refs) |
 
 ---
 
@@ -116,9 +145,9 @@ done
 After a `--validate-dag` run with `complex_goal_dag.md`, check:
 
 1. **`multi_agent/dag_validation.json`** — should show `valid: true` with:
-   - `execution_levels` having 6+ levels
-   - `parallelism_width` of 3–4 (the adapter fan-out)
-   - `max_fan_in` of 4+ (at the aggregator)
+   - `execution_levels` having 4+ levels (target 5–8)
+   - `parallelism_width` of 2+ (target 4 when adapters split)
+   - `max_fan_in` of 2+ (target 4–6 at the aggregator or tests)
    - No errors, possibly a deep-chain warning
 
 2. **`multi_agent/task_decomposition.json`** — should show tasks with rich

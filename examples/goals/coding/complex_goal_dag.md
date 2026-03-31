@@ -108,13 +108,13 @@ interface CommunityAdapter {
 }
 ```
 
-Build four adapters:
-- **RedditAdapter** — live fetch from Reddit public JSON API (`r/workato.json`)
+**Represent each adapter as its own task in decomposition.** Build four adapters:
+- **RedditAdapter** — fetches from Reddit public JSON API (`r/workato.json`) when available; falls back to a recorded JSON fixture when the live API is unreachable or rate-limited, so benchmark runs are not externally flaky. The adapter should ship with a bundled fixture containing at least 5 sample posts matching the `Post` schema.
 - **SystematicAdapter** — scaffolded stub returning empty array with TODO for OAuth
 - **SlackAdapter** — synthetic data generator returning realistic mock posts
 - **DiscordAdapter** — synthetic data generator returning realistic mock posts
 
-Each adapter depends on the shared `Post` type from the database layer.
+Each adapter depends on `types.ts` (for the `Post`, `RawPost`, and `FetchOptions` types) and `config.ts` (for API tokens / env config). Adapters do **not** depend on `db.ts` — persistence is handled downstream by the aggregator.
 
 ### 3. Aggregation Engine
 
@@ -221,13 +221,19 @@ Write tests covering:
 
 Tests depend on every module they cover — creating many leaf-node edges in the DAG.
 
-### 9. Deployment Configuration
+### 9. TypeScript & Environment Config
+
+Create:
+- `tsconfig.json` — strict TypeScript config
+- `.env.example` — template with all required env vars documented
+
+These depend only on the type system being defined.
+
+### 10. Deployment Configuration
 
 Create:
 - `fly.toml` — Fly.io deployment config (Node 20, port 3000, health check)
 - `Dockerfile` — multi-stage build (install, build, runtime)
-- `.env.example` — template with all required env vars documented
-- `tsconfig.json` — strict TypeScript config
 
 Deployment config depends on the HTTP layer being complete.
 
@@ -244,30 +250,33 @@ types.ts (hub — no deps, everything depends on it)
     +-- config.ts (depends on types)
     |       |
     |       +-- db.ts (depends on types, config)
-    |       |       |
-    |       |       +-- RedditAdapter (depends on types, db)
-    |       |       +-- SystematicAdapter (depends on types, db)
-    |       |       +-- SlackAdapter (depends on types, db)
-    |       |       +-- DiscordAdapter (depends on types, db)
-    |       |               |
-    |       |               +-- CommunityAggregator (depends on all adapters + db)
-    |       |                       |
-    |       |                       +-- MCP Server (depends on aggregator)
-    |       |                               |
-    |       +-------------------------------+-- HTTP/SSE Layer (depends on MCP + config)
-    |                                               |
-    |                                               +-- Deployment (depends on HTTP)
+    |       |
+    |       +-- RedditAdapter (depends on types, config)
+    |       +-- SystematicAdapter (depends on types, config)
+    |       +-- SlackAdapter (depends on types, config)
+    |       +-- DiscordAdapter (depends on types, config)
+    |               |
+    |               +-- CommunityAggregator (depends on all 4 adapters + db)
+    |                       |
+    |                       +-- MCP Server (depends on aggregator)
+    |                               |
+    |       +-----------------------+-- HTTP/SSE Layer (depends on MCP + config)
+    |                                       |
+    |                                       +-- Deployment (depends on HTTP)
+    |
+    +-- tsconfig / .env.example (depends on types)
     |
     +-- Tests (depend on adapters, aggregator, db, HTTP)
 ```
 
 Key DAG properties this exercises:
 - **Hub node**: `types.ts` is depended on by 8+ tasks
-- **Diamond dependencies**: multiple paths converge at the aggregator
-- **Fan-out**: 4 parallel adapter tasks from the db layer
-- **Fan-in**: aggregator collects all 4 adapters
-- **Linear chain**: MCP -> HTTP -> Deployment
+- **Diamond dependencies**: `config.ts` feeds both db and adapters; both paths converge at the aggregator
+- **Fan-out**: 4 parallel adapter tasks from `config.ts` (+ `types.ts`)
+- **Fan-in**: aggregator collects all 4 adapters + db
+- **Linear chain**: MCP → HTTP → Deployment
 - **Wide leaf layer**: test tasks reference many upstream nodes
+
 
 ---
 
@@ -278,7 +287,7 @@ Key DAG properties this exercises:
 - `GET /community-posts` returns valid JSON matching the `Post[]` schema
 - MCP tool `get_community_posts` is discoverable via the SSE endpoint
 - All unit and integration tests pass
-- Reddit adapter fetches live data from `r/workato`
+- Reddit adapter fetches live data from `r/workato` or falls back to recorded fixture gracefully
 - Synthetic adapters return realistic, schema-compliant mock data
 - Database migrations run cleanly against a fresh Neon instance
 - Docker image builds successfully with multi-stage Dockerfile
